@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // 允许跨域和预检请求
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -23,28 +22,68 @@ export default async function handler(req, res) {
       });
     }
 
-    const { niche, language } = req.body || {};
+    const { geo = "US", language = "中文" } = req.body || {};
+
+    const rssUrl = `https://trends.google.com/trending/rss?geo=${encodeURIComponent(
+      geo,
+    )}`;
+
+    const rssRes = await fetch(rssUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 AI-Podcast-Tools/1.0",
+      },
+    });
+
+    if (!rssRes.ok) {
+      return res.status(500).json({
+        error: `Failed to fetch Google Trends RSS: ${rssRes.status}`,
+      });
+    }
+
+    const xml = await rssRes.text();
+    const rawTrends = parseGoogleTrendsRss(xml).slice(0, 12);
+
+    if (!rawTrends.length) {
+      return res.status(500).json({
+        error: "No trends found from Google Trends RSS.",
+      });
+    }
+
+    const trendsText = rawTrends
+      .map((item, index) => {
+        return `${index + 1}. ${item.title}
+搜索热度：${item.traffic || "未知"}
+相关新闻：${item.news || "暂无"}
+链接：${item.link || ""}`;
+      })
+      .join("\n\n");
 
     const prompt = `
 你是一个播客选题策划助手。
 
-请根据以下信息，生成 8 个适合做播客的热门选题：
+下面是从 Google Trends RSS 获取到的真实趋势搜索词和相关新闻：
+${trendsText}
 
-领域：${niche || "AI, technology, business, marketing"}
-语言：${language || "中文"}
+请基于这些真实趋势，生成 8 个适合中文播客的选题。
 
 要求：
-1. 选题要有热点感、讨论度和播客延展性
-2. 每个选题包含 title 和 reason
-3. title 要简洁、有吸引力
-4. reason 说明为什么这个选题适合做播客
-5. 只返回 JSON，不要返回 Markdown，不要解释
+1. 必须结合真实趋势，不要凭空编造热点
+2. 每个选题要适合做播客，有讨论空间
+3. title 要像播客标题，不能只是关键词
+4. summary 说明这个选题可以怎么展开
+5. tag 用 2-4 个字，例如：科技、商业、社会、娱乐、国际、AI
+6. momentum 保留搜索热度信息，例如 "+50K searches" 或 "热门上升"
+7. keywords 给 3 个关键词
+8. 只返回 JSON，不要 Markdown，不要解释
 
-返回格式如下：
+返回格式：
 [
   {
-    "title": "选题标题",
-    "reason": "推荐理由"
+    "title": "播客选题标题",
+    "tag": "科技",
+    "momentum": "+50K searches",
+    "summary": "这个选题为什么值得聊，以及可以从哪些角度展开。",
+    "keywords": ["关键词1", "关键词2", "关键词3"]
   }
 ]
 `;
@@ -60,14 +99,14 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "system",
-            content: "你是一个专业的播客内容策划助手，只返回严格 JSON。",
+            content: "你是一个专业播客选题策划助手，只返回严格 JSON。",
           },
           {
             role: "user",
             content: prompt,
           },
         ],
-        temperature: 0.8,
+        temperature: 0.7,
       }),
     });
 
@@ -93,11 +132,15 @@ export default async function handler(req, res) {
         return res.status(500).json({
           error: "Kimi response is not valid JSON.",
           raw: content,
+          sourceTrends: rawTrends,
         });
       }
     }
 
     return res.status(200).json({
+      source: "Google Trends RSS",
+      geo,
+      rawTrends,
       trends,
     });
   } catch (error) {
@@ -105,4 +148,50 @@ export default async function handler(req, res) {
       error: error.message || "Internal server error",
     });
   }
+}
+
+function parseGoogleTrendsRss(xml) {
+  const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+
+  return items.map((item) => {
+    const title = cleanXml(getTag(item, "title"));
+    const link = cleanXml(getTag(item, "link"));
+    const traffic =
+      cleanXml(getTag(item, "ht:approx_traffic")) ||
+      cleanXml(getTag(item, "approx_traffic"));
+
+    const newsTitles = [];
+    const newsRegex = /<ht:news_item_title>([\s\S]*?)<\/ht:news_item_title>/g;
+    let match;
+
+    while ((match = newsRegex.exec(item)) !== null) {
+      newsTitles.push(cleanXml(match[1]));
+    }
+
+    return {
+      title,
+      link,
+      traffic,
+      news: newsTitles.slice(0, 3).join("；"),
+    };
+  });
+}
+
+function getTag(xml, tagName) {
+  const escapedTag = tagName.replace(":", "\\:");
+  const regex = new RegExp(`<${escapedTag}[^>]*>([\\s\\S]*?)<\\/${escapedTag}>`);
+  const match = xml.match(regex);
+  return match ? match[1] : "";
+}
+
+function cleanXml(value = "") {
+  return value
+    .replace(/<!\[CDATA\[/g, "")
+    .replace(/\]\]>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
 }
