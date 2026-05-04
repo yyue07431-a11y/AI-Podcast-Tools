@@ -17,7 +17,7 @@ const trendingTopics = [
     platform: "X",
     category: "科技",
     heat: 92,
-    tags: ["AI", "版权", "音乐"],
+    tags: ["AI版权", "音乐产业", "创作者收益"],
     summary: "AI 音乐生成正在冲击版权归属、平台分发和创作者收益分配。",
   },
   {
@@ -27,7 +27,7 @@ const trendingTopics = [
     platform: "微博",
     category: "娱乐",
     heat: 88,
-    tags: ["名人", "综艺"],
+    tags: ["明星综艺", "粉丝传播", "娱乐营销"],
     summary: "明星综艺内容在微博和短视频平台形成二次传播，适合做娱乐观察型播客。",
   },
   {
@@ -37,7 +37,7 @@ const trendingTopics = [
     platform: "Google Trends",
     category: "商业",
     heat: 81,
-    tags: ["创作者经济", "播客", "内容商业化"],
+    tags: ["创作者经济", "内容变现", "个人品牌"],
     summary: "创作者经济搜索热度上升，说明内容变现、个人品牌和 AI 工具链仍有讨论空间。",
   },
   {
@@ -47,7 +47,7 @@ const trendingTopics = [
     platform: "小红书",
     category: "社会",
     heat: 79,
-    tags: ["副业", "普通人", "内容创作"],
+    tags: ["普通人副业", "内容焦虑", "平台机会"],
     summary: "普通人通过内容平台做副业成为讨论热点，适合切入焦虑、机会与平台机制。",
   },
 ];
@@ -76,16 +76,20 @@ const modelOptions = [
 
 function normalizeCategory(category = "") {
   const text = String(category || "");
-
   if (categories.includes(text)) return text;
   if (text.includes("政")) return "政治";
   if (text.includes("名人") || text.includes("明星") || text.includes("艺人")) return "名人";
   if (text.includes("娱") || text.includes("综艺") || text.includes("影视")) return "娱乐";
   if (text.includes("社会") || text.includes("民生")) return "社会";
   if (text.includes("商") || text.includes("财经") || text.includes("消费") || text.includes("创业")) return "商业";
-  if (text.includes("科技") || text.includes("AI") || text.includes("人工智能")) return "科技";
-
   return "科技";
+}
+
+function normalizeTags(topic) {
+  if (Array.isArray(topic.aiTags) && topic.aiTags.length > 0) return topic.aiTags;
+  if (Array.isArray(topic.tags) && topic.tags.length > 0) return topic.tags;
+  if (Array.isArray(topic.keywords) && topic.keywords.length > 0) return topic.keywords;
+  return ["热点观察", "内容选题", "播客素材"];
 }
 
 function App() {
@@ -129,7 +133,12 @@ function App() {
       const res = await fetch("/api/generate-trends", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ niche: "AI, marketing, podcast, creator economy", language: "中文" }),
+        body: JSON.stringify({
+          niche: "AI, marketing, podcast, creator economy",
+          language: "中文",
+          requireAiTags: true,
+          tagRule: "请为每个热点生成更贴合主题的3个中文标签，不要泛泛写AI/热点/播客。",
+        }),
       });
 
       const data = await res.json();
@@ -147,11 +156,7 @@ function App() {
         platform: topic.platform || topic.source || "AI 聚合",
         category: normalizeCategory(topic.category || topic.tag || topic.type),
         heat: topic.heat || Math.floor(Math.random() * 20) + 75,
-        tags: Array.isArray(topic.keywords)
-          ? topic.keywords
-          : Array.isArray(topic.tags)
-            ? topic.tags
-            : ["AI", "Podcast", "Trend"],
+        tags: normalizeTags(topic),
         summary: topic.summary || topic.reason || "该选题具备热点讨论度，适合展开播客内容。",
       }));
 
@@ -169,11 +174,16 @@ function App() {
 
   const handleGenerateScript = async (customInstruction = inputText) => {
     const selectedTopicText = selectedTopics
-      .map((topic) => `【${topic.platform}｜${normalizeCategory(topic.category)}】${topic.title}\n摘要：${topic.summary}`)
+      .map(
+        (topic) =>
+          `【${topic.platform}｜${normalizeCategory(topic.category)}】${topic.title}
+摘要：${topic.summary}
+AI标签：${normalizeTags(topic).join("、")}`,
+      )
       .join("\n\n");
 
     const finalInput = `
-你是一个专业中文播客编剧。请基于“当前脚本”和“用户新指令”进行修改或生成，不要每次都重新写一篇无关内容。
+你是一个专业中文播客编剧。请进行真实多轮对话式创作：你必须基于“当前脚本 + 历史对话 + 用户最新指令”修改脚本，而不是每次重新生成无关内容。
 
 当前脚本：
 ${scriptText || "暂无当前脚本"}
@@ -184,10 +194,10 @@ ${selectedTopicText || "暂无已选择热点"}
 用户最新指令：
 ${customInstruction}
 
-要求：
+输出要求：
 1. 如果用户要求修改，请直接输出修改后的完整脚本。
 2. 如果用户要求生成，请基于已选择热点生成融合多主题脚本。
-3. 保留原脚本中有价值的结构和观点。
+3. 保留当前脚本中有价值的结构和观点。
 4. 根据用户指令调整语气、长度、语言、结构。
 5. 不要解释你做了什么，只输出最终可用的播客脚本。
 `;
@@ -207,6 +217,7 @@ ${customInstruction}
           model: selectedModel,
           messages: newMessages,
           currentScript: scriptText,
+          selectedTopics,
         }),
       });
 
@@ -317,7 +328,9 @@ ${customInstruction}
             <AudioPage voices={voiceOptions} scriptText={scriptText} selectedTopic={primaryTopic} />
           )}
 
-          {activePage === "clips" && <ClipsPage scriptText={scriptText} />}
+          {activePage === "clips" && (
+            <ClipsPage scriptText={scriptText} selectedTopics={selectedTopics} />
+          )}
         </main>
       </div>
     </div>
@@ -380,7 +393,7 @@ function DiscoverPage({
             disabled={isRefreshingTrends}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isRefreshingTrends ? "刷新中..." : "刷新趋势"}
+            {isRefreshingTrends ? "AI 分析中..." : "AI 刷新热点"}
           </button>
         </div>
 
@@ -411,7 +424,7 @@ function DiscoverPage({
           <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
             <p className="text-sm font-medium text-slate-600">该分类下暂无选题</p>
             <p className="mt-2 text-sm text-slate-500">
-              可以切换到「全部」，或点击「刷新趋势」重新获取热点。
+              可以切换到「全部」，或点击「AI 刷新热点」重新获取。
             </p>
           </div>
         )}
@@ -420,6 +433,7 @@ function DiscoverPage({
           {filteredTopics.map((topic) => {
             const isSelected = selectedTopicIds.includes(topic.id);
             const safeCategory = normalizeCategory(topic.category || topic.tag || topic.type);
+            const safeTags = normalizeTags(topic);
 
             return (
               <button
@@ -447,11 +461,11 @@ function DiscoverPage({
                     <p className="mt-2 text-sm leading-6 text-slate-500">{topic.summary}</p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 sm:max-w-[210px] sm:justify-end">
-                    {(topic.tags || []).map((tag) => (
+                  <div className="flex flex-wrap gap-2 sm:max-w-[230px] sm:justify-end">
+                    {safeTags.map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500"
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500"
                       >
                         {tag}
                       </span>
@@ -484,6 +498,13 @@ function DiscoverPage({
                 <p className="mt-1 text-xs text-slate-500">
                   {topic.platform} / {normalizeCategory(topic.category)}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {normalizeTags(topic).map((tag) => (
+                    <span key={tag} className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-500">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
@@ -539,96 +560,107 @@ function DraftPage({
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
-      <Card>
-        <h3 className="text-xl font-semibold">AI 对话式脚本生成</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          支持多轮指令、历史版本查看与复制。
-        </p>
+      <Card className="flex min-h-[720px] flex-col">
+        <div>
+          <h3 className="text-xl font-semibold">AI 对话式脚本生成</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            真实多轮对话：当前脚本、历史对话和新指令会一起传给模型。
+          </p>
 
-        <div className="mt-6 rounded-3xl bg-slate-50 p-5">
-          <p className="text-sm text-slate-500">当前融合主题</p>
-          <div className="mt-3 space-y-2">
-            {selectedTopics.map((topic) => (
-              <p key={topic.id} className="text-sm font-medium leading-6">
-                【{topic.platform}】{topic.title}
-              </p>
-            ))}
+          <div className="mt-6 rounded-3xl bg-slate-50 p-5">
+            <p className="text-sm text-slate-500">当前融合主题</p>
+            <div className="mt-3 space-y-2">
+              {selectedTopics.map((topic) => (
+                <p key={topic.id} className="text-sm font-medium leading-6">
+                  【{topic.platform}】{topic.title}
+                </p>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="mt-6">
-          <label className="text-sm font-medium text-slate-600">选择模型</label>
-          <select
-            value={selectedModel}
-            onChange={(event) => onSelectedModelChange(event.target.value)}
-            className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand-500"
-          >
-            {modelOptions.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mt-6">
-          <label className="text-sm font-medium text-slate-600">输入新指令</label>
-          <textarea
-            value={inputText}
-            onChange={(event) => onInputTextChange(event.target.value)}
-            placeholder="例如：把当前脚本改成更犀利的商业评论风格，并保留原来的结构。"
-            className="mt-3 min-h-[130px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none transition focus:border-brand-500 focus:bg-white"
-          />
-        </div>
-
-        {generateError && (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {generateError}
+          <div className="mt-6">
+            <label className="text-sm font-medium text-slate-600">选择模型</label>
+            <select
+              value={selectedModel}
+              onChange={(event) => onSelectedModelChange(event.target.value)}
+              className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-brand-500"
+            >
+              {modelOptions.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
 
-        <button
-          type="button"
-          onClick={() => onGenerateScript(inputText)}
-          disabled={isGenerating}
-          className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isGenerating ? "生成中..." : "发送指令"}
-        </button>
+          <div className="mt-6">
+            <label className="text-sm font-medium text-slate-600">输入新指令</label>
+            <textarea
+              value={inputText}
+              onChange={(event) => onInputTextChange(event.target.value)}
+              placeholder="例如：把当前脚本改成更犀利的商业评论风格，并保留原来的结构。"
+              className="mt-3 min-h-[130px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none transition focus:border-brand-500 focus:bg-white"
+            />
+          </div>
 
-        <div className="mt-6 max-h-72 space-y-3 overflow-y-auto">
-          {messages.length === 0 && (
-            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-              暂无历史版本。发送指令后，这里会保存你的要求和 AI 返回的版本。
+          {generateError && (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {generateError}
             </div>
           )}
 
-          {messages.map((message, index) => (
-            <details
-              key={index}
-              className={`rounded-2xl p-3 text-sm leading-6 ${
-                message.role === "user"
-                  ? "bg-slate-100 text-slate-700"
-                  : "bg-brand-50 text-slate-700"
-              }`}
-            >
-              <summary className="cursor-pointer text-sm font-medium">
-                {message.role === "user" ? `我的指令 ${Math.ceil((index + 1) / 2)}` : `AI 版本 ${Math.ceil((index + 1) / 2)}`}
-              </summary>
+          <button
+            type="button"
+            onClick={() => onGenerateScript(inputText)}
+            disabled={isGenerating}
+            className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isGenerating ? "AI 修改中..." : "发送给 AI"}
+          </button>
+        </div>
 
-              <div className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-white/70 p-3 text-sm leading-7">
-                {message.content}
+        <div className="mt-6 flex-1 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-600">历史对话</p>
+            <p className="text-xs text-slate-400">{messages.length} 条记录</p>
+          </div>
+
+          <div className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
+            {messages.length === 0 && (
+              <div className="rounded-2xl bg-white p-4 text-sm text-slate-500">
+                暂无历史对话。发送指令后，这里会滚动保存你的要求和 AI 返回版本。
               </div>
+            )}
 
-              <button
-                type="button"
-                onClick={() => navigator.clipboard.writeText(message.content)}
-                className="mt-3 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
+            {messages.map((message, index) => (
+              <details
+                key={index}
+                className={`rounded-2xl p-3 text-sm leading-6 ${
+                  message.role === "user"
+                    ? "bg-white text-slate-700"
+                    : "bg-brand-50 text-slate-700"
+                }`}
               >
-                复制内容
-              </button>
-            </details>
-          ))}
+                <summary className="cursor-pointer text-sm font-medium">
+                  {message.role === "user"
+                    ? `我的指令 ${Math.ceil((index + 1) / 2)}`
+                    : `AI 回复 ${Math.ceil((index + 1) / 2)}`}
+                </summary>
+
+                <div className="mt-3 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-white/80 p-3 text-sm leading-7">
+                  {message.content}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(message.content)}
+                  className="mt-3 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
+                >
+                  复制
+                </button>
+              </details>
+            ))}
+          </div>
         </div>
       </Card>
 
@@ -636,7 +668,7 @@ function DraftPage({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-xl font-semibold">播客脚本</h3>
-            <p className="mt-1 text-sm text-slate-500">可直接编辑当前主题与脚本内容。</p>
+            <p className="mt-1 text-sm text-slate-500">可直接编辑当前脚本，下一轮 AI 会基于这里的最新内容继续修改。</p>
           </div>
           <button
             type="button"
@@ -650,35 +682,10 @@ function DraftPage({
         <textarea
           value={scriptText}
           onChange={(event) => onScriptTextChange(event.target.value)}
-          className="mt-6 min-h-[520px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-500 focus:bg-white"
+          className="mt-6 min-h-[620px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-500 focus:bg-white"
         />
       </Card>
     </div>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <span className="ml-1 block h-0 w-0 border-y-[10px] border-l-[16px] border-y-transparent border-l-ink" />
-  );
-}
-
-function PauseIcon() {
-  return (
-    <span className="flex items-center gap-1">
-      <span className="h-5 w-1.5 rounded-full bg-ink" />
-      <span className="h-5 w-1.5 rounded-full bg-ink" />
-    </span>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <span className="relative block h-5 w-5">
-      <span className="absolute left-1/2 top-0 h-3 w-0.5 -translate-x-1/2 rounded-full bg-white" />
-      <span className="absolute left-[6px] top-[8px] h-2 w-2 rotate-45 border-b-2 border-r-2 border-white" />
-      <span className="absolute bottom-0 left-0 h-0.5 w-5 rounded-full bg-white" />
-    </span>
   );
 }
 
@@ -734,8 +741,10 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
       setAudioUrl(url);
 
       setTimeout(() => {
-        audioRef.current?.play();
-        setIsPlaying(true);
+        if (audioRef.current) {
+          audioRef.current.play();
+          setIsPlaying(true);
+        }
       }, 300);
     } catch (error) {
       setAudioError(error.message || "音频生成失败");
@@ -744,15 +753,19 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
     }
   };
 
-  const handleTogglePlay = () => {
+  const handleTogglePlay = async () => {
     if (!audioRef.current || !audioUrl) return;
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play();
-      setIsPlaying(true);
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch {
+        setAudioError("播放失败，请重新生成音频或检查浏览器权限。");
+      }
     }
   };
 
@@ -760,7 +773,7 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
     <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
       <Card>
         <h3 className="text-xl font-semibold">语音参数</h3>
-        <p className="mt-1 text-sm text-slate-500">生成后自动播放，播放键支持暂停/继续。</p>
+        <p className="mt-1 text-sm text-slate-500">生成后自动播放，也可以手动播放或暂停。</p>
 
         <div className="mt-6 space-y-4">
           {voices.map((voice, index) => (
@@ -809,6 +822,8 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
           <audio
             ref={audioRef}
             src={audioUrl}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
             onTimeUpdate={(event) => {
               const audio = event.currentTarget;
               if (audio.duration) {
@@ -836,19 +851,19 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
                 type="button"
                 onClick={handleTogglePlay}
                 disabled={!audioUrl}
-                className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-ink shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-ink shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isPlaying ? <PauseIcon /> : <PlayIcon />}
+                {isPlaying ? "暂停" : "播放"}
               </button>
 
               <a
                 href={audioUrl || undefined}
                 download="podcast-audio.mp3"
-                className={`flex h-12 w-12 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20 ${
+                className={`rounded-full bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20 ${
                   !audioUrl ? "pointer-events-none opacity-40" : ""
                 }`}
               >
-                <DownloadIcon />
+                下载
               </a>
             </div>
           </div>
@@ -858,7 +873,7 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
   );
 }
 
-function ClipsPage({ scriptText }) {
+function ClipsPage({ scriptText, selectedTopics }) {
   const [generatedClips, setGeneratedClips] = useState([]);
   const [isGeneratingClips, setIsGeneratingClips] = useState(false);
   const [clipsError, setClipsError] = useState("");
@@ -882,10 +897,13 @@ function ClipsPage({ scriptText }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           script: scriptText,
-          duration: clipDuration,
-          platform,
-          tags: clipTags.split(",").map((tag) => tag.trim()).filter(Boolean),
+          selectedTopics,
+          durationPreference: clipDuration,
+          platformPreference: platform,
+          tagPreference: clipTags,
           autoStrategy: true,
+          requirement:
+            "请基于热点和脚本内容，生成热点切片片段，并为每个片段自动给出建议时长、适合平台和内容标签。",
         }),
       });
 
@@ -911,9 +929,9 @@ function ClipsPage({ scriptText }) {
       <Card>
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-semibold">高分切片</h3>
+            <h3 className="text-xl font-semibold">热点高分切片</h3>
             <p className="mt-1 text-sm text-slate-500">
-              AI 根据脚本内容自动判断切片时长、发布平台和内容标签。
+              AI 根据热点和脚本内容，提取适合传播的片段，并自动生成时长、平台和标签。
             </p>
           </div>
           <button
@@ -922,7 +940,7 @@ function ClipsPage({ scriptText }) {
             disabled={isGeneratingClips}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isGeneratingClips ? "生成中..." : "生成切片"}
+            {isGeneratingClips ? "生成中..." : "生成热点切片"}
           </button>
         </div>
 
@@ -934,28 +952,37 @@ function ClipsPage({ scriptText }) {
 
         {generatedClips.length === 0 && !clipsError && (
           <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-            <p className="text-sm font-medium text-slate-600">还没有生成切片</p>
-            <p className="mt-2 text-sm text-slate-500">点击「生成切片」后，AI 会提取高传播片段并自动生成策略。</p>
+            <p className="text-sm font-medium text-slate-600">还没有生成热点切片</p>
+            <p className="mt-2 text-sm text-slate-500">
+              点击「生成热点切片」后，AI 会结合热点和脚本内容生成片段策略。
+            </p>
           </div>
         )}
 
         <div className="mt-6 space-y-4">
           {generatedClips.map((clip, index) => {
-            const clipTags = Array.isArray(clip.tags) ? clip.tags : [];
-
+            const tags = Array.isArray(clip.tags) ? clip.tags : [];
             return (
               <div key={index} className="rounded-3xl border border-slate-200 bg-white p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h4 className="text-lg font-semibold">{clip.title || `切片 ${index + 1}`}</h4>
+                    <h4 className="text-lg font-semibold">
+                      {clip.title || clip.hotspot || `热点切片 ${index + 1}`}
+                    </h4>
 
                     <p className="mt-2 text-sm text-slate-500">
                       {clip.duration || clip.time || "AI 建议时长"} / {clip.platform || "AI 建议平台"}
                     </p>
 
-                    {clipTags.length > 0 && (
+                    {clip.relatedHotTopic && (
+                      <p className="mt-2 text-xs text-brand-700">
+                        关联热点：{clip.relatedHotTopic}
+                      </p>
+                    )}
+
+                    {tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {clipTags.map((tag) => (
+                        {tags.map((tag) => (
                           <span key={tag} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
                             {tag}
                           </span>
@@ -970,7 +997,7 @@ function ClipsPage({ scriptText }) {
                     )}
 
                     <p className="mt-3 text-sm leading-6 text-slate-600">
-                      {clip.reason || "该片段观点清晰，适合用于短视频传播。"}
+                      {clip.reason || "该片段和热点相关度高，适合用于短视频传播。"}
                     </p>
                   </div>
 
@@ -987,7 +1014,7 @@ function ClipsPage({ scriptText }) {
 
       <Card>
         <h3 className="text-xl font-semibold">切片策略面板</h3>
-        <p className="mt-1 text-sm text-slate-500">默认由 AI 根据切片内容自动判断，也支持手动给偏好。</p>
+        <p className="mt-1 text-sm text-slate-500">默认由 AI 自动判断，也可以输入偏好。</p>
 
         <div className="mt-6 space-y-4">
           <div>
@@ -1030,6 +1057,17 @@ function ClipsPage({ scriptText }) {
             <p className="text-sm text-slate-500">当前脚本长度</p>
             <p className="mt-2 text-lg font-semibold">{scriptText ? `${scriptText.length} 字符` : "暂无脚本"}</p>
           </div>
+
+          <div className="rounded-3xl bg-slate-50 p-5">
+            <p className="text-sm text-slate-500">已选择热点</p>
+            <div className="mt-3 space-y-2">
+              {selectedTopics.map((topic) => (
+                <p key={topic.id} className="text-sm font-medium leading-6">
+                  【{topic.platform}】{topic.title}
+                </p>
+              ))}
+            </div>
+          </div>
         </div>
 
         <button
@@ -1038,7 +1076,7 @@ function ClipsPage({ scriptText }) {
           disabled={isGeneratingClips}
           className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isGeneratingClips ? "AI 正在分析脚本..." : "AI 生成切片策略"}
+          {isGeneratingClips ? "AI 正在分析热点..." : "AI 生成热点切片"}
         </button>
       </Card>
     </div>
