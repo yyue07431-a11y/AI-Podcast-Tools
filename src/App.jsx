@@ -53,27 +53,6 @@ const voiceOptions = [
   { name: "嘉宾 C · 深度访谈感", language: "中文", speed: "0.95x" },
 ];
 
-const clips = [
-  {
-    title: "AI 不是工具，而是新同事",
-    time: "00:12 - 00:34",
-    score: 94,
-    reason: "情绪起势强，适合首屏短视频开场。",
-  },
-  {
-    title: "工作流被重新设计",
-    time: "02:15 - 02:45",
-    score: 89,
-    reason: "观点清晰，关键词密集，适合知识型内容截取。",
-  },
-  {
-    title: "一次生成多平台素材",
-    time: "05:02 - 05:28",
-    score: 84,
-    reason: "具备方法论总结感，适合作为转化片段。",
-  },
-];
-
 function App() {
   const [activePage, setActivePage] = useState("discover");
   const [topics, setTopics] = useState(trendingTopics);
@@ -123,7 +102,8 @@ function App() {
         title: topic.title || `AI 播客选题 ${index + 1}`,
         tag: topic.tag || "AI 推荐",
         momentum: topic.momentum || `+${Math.floor(Math.random() * 20) + 10}%`,
-        summary: topic.summary || topic.reason || "该选题具备热点讨论度，适合展开播客内容。",
+        summary:
+          topic.summary || topic.reason || "该选题具备热点讨论度，适合展开播客内容。",
         keywords: Array.isArray(topic.keywords)
           ? topic.keywords
           : ["AI", "Podcast", "Trend"],
@@ -283,7 +263,7 @@ function App() {
             />
           )}
 
-          {activePage === "clips" && <ClipsPage clips={clips} />}
+          {activePage === "clips" && <ClipsPage scriptText={scriptText} />}
         </main>
       </div>
     </div>
@@ -749,32 +729,121 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
     </div>
   );
 }
-function ClipsPage({ clips }) {
+
+function ClipsPage({ scriptText }) {
+  const [generatedClips, setGeneratedClips] = useState([]);
+  const [isGeneratingClips, setIsGeneratingClips] = useState(false);
+  const [clipsError, setClipsError] = useState("");
+
+  const handleGenerateClips = async () => {
+    setIsGeneratingClips(true);
+    setClipsError("");
+
+    if (!scriptText || !scriptText.trim()) {
+      setClipsError("请先在脚本草稿页生成或填写播客脚本。");
+      setIsGeneratingClips(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/generate-clips", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          script: scriptText,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : "切片生成失败，请检查 generate-clips 接口",
+        );
+      }
+
+      const clips = Array.isArray(data.clips) ? data.clips : [];
+
+      if (clips.length === 0) {
+        throw new Error("接口返回为空，没有生成切片。");
+      }
+
+      setGeneratedClips(clips);
+    } catch (error) {
+      console.error(error);
+      setClipsError(error.message || "切片生成失败");
+    } finally {
+      setIsGeneratingClips(false);
+    }
+  };
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
       <Card>
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-semibold">高分切片</h3>
-            <p className="mt-1 text-sm text-slate-500">根据传播潜力、信息密度和情绪峰值给出评分。</p>
+            <p className="mt-1 text-sm text-slate-500">
+              根据传播潜力、信息密度和情绪峰值，自动生成适合短视频传播的片段。
+            </p>
           </div>
-          <button className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white">
-            重新评分
+          <button
+            type="button"
+            onClick={handleGenerateClips}
+            disabled={isGeneratingClips}
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isGeneratingClips ? "生成中..." : "生成切片"}
           </button>
         </div>
 
+        {clipsError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {clipsError}
+          </div>
+        )}
+
+        {generatedClips.length === 0 && !clipsError && (
+          <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+            <p className="text-sm font-medium text-slate-600">还没有生成切片</p>
+            <p className="mt-2 text-sm text-slate-500">
+              点击右上角「生成切片」，AI 会从当前脚本中提取 3 个高传播潜力片段。
+            </p>
+          </div>
+        )}
+
         <div className="mt-6 space-y-4">
-          {clips.map((clip) => (
-            <div key={clip.title} className="rounded-3xl border border-slate-200 bg-white p-5">
+          {generatedClips.map((clip, index) => (
+            <div key={index} className="rounded-3xl border border-slate-200 bg-white p-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h4 className="text-lg font-semibold">{clip.title}</h4>
-                  <p className="mt-2 text-sm text-slate-500">{clip.time}</p>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">{clip.reason}</p>
+                  <h4 className="text-lg font-semibold">
+                    {clip.title || `切片 ${index + 1}`}
+                  </h4>
+                  <p className="mt-2 text-sm text-slate-500">
+                    {clip.time || "建议时长：20-40 秒"}
+                  </p>
+
+                  {clip.content && (
+                    <div className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm leading-7 text-slate-700">
+                      {clip.content}
+                    </div>
+                  )}
+
+                  <p className="mt-3 text-sm leading-6 text-slate-600">
+                    {clip.reason || "该片段观点清晰，适合用于短视频传播。"}
+                  </p>
                 </div>
+
                 <div className="rounded-2xl bg-brand-50 px-4 py-3 text-center">
                   <p className="text-xs text-slate-500">Score</p>
-                  <p className="mt-1 text-2xl font-semibold text-brand-700">{clip.score}</p>
+                  <p className="mt-1 text-2xl font-semibold text-brand-700">
+                    {clip.score || 88}
+                  </p>
                 </div>
               </div>
             </div>
@@ -784,12 +853,16 @@ function ClipsPage({ clips }) {
 
       <Card>
         <h3 className="text-xl font-semibold">切片策略面板</h3>
-        <p className="mt-1 text-sm text-slate-500">生成适合短视频、社媒预告和信息卡片的内容片段。</p>
+        <p className="mt-1 text-sm text-slate-500">
+          生成适合短视频、社媒预告和信息卡片的内容片段。
+        </p>
 
         <div className="mt-6 space-y-4">
           <div className="rounded-3xl bg-slate-50 p-5">
-            <p className="text-sm text-slate-500">推荐主标题</p>
-            <p className="mt-2 text-lg font-semibold">AI 正在变成内容团队的新同事</p>
+            <p className="text-sm text-slate-500">当前脚本长度</p>
+            <p className="mt-2 text-lg font-semibold">
+              {scriptText ? `${scriptText.length} 字符` : "暂无脚本"}
+            </p>
           </div>
           <div className="rounded-3xl bg-slate-50 p-5">
             <p className="text-sm text-slate-500">适合平台</p>
@@ -801,8 +874,13 @@ function ClipsPage({ clips }) {
           </div>
         </div>
 
-        <button className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white">
-          导出全部切片
+        <button
+          type="button"
+          onClick={handleGenerateClips}
+          disabled={isGeneratingClips}
+          className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isGeneratingClips ? "AI 正在分析脚本..." : "重新生成切片"}
         </button>
       </Card>
     </div>
