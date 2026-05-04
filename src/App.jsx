@@ -76,6 +76,7 @@ const clips = [
 
 function App() {
   const [activePage, setActivePage] = useState("discover");
+  const [topics, setTopics] = useState(trendingTopics);
   const [selectedTopic, setSelectedTopic] = useState(trendingTopics[0]);
   const [scriptText, setScriptText] = useState(initialScript);
   const [assistantMode, setAssistantMode] = useState("润色语气");
@@ -84,8 +85,63 @@ function App() {
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
+  const [isRefreshingTrends, setIsRefreshingTrends] = useState(false);
+  const [trendsError, setTrendsError] = useState("");
 
-  const pageTitle = pages.find((page) => page.id === activePage)?.label ?? "AI Podcast Studio";
+  const pageTitle =
+    pages.find((page) => page.id === activePage)?.label ?? "AI Podcast Studio";
+
+  const handleRefreshTrends = async () => {
+    setIsRefreshingTrends(true);
+    setTrendsError("");
+
+    try {
+      const res = await fetch("/api/generate-trends", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          niche: "AI, marketing, podcast, creator economy",
+          language: "中文",
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : "刷新趋势失败，请检查 generate-trends 接口",
+        );
+      }
+
+      const newTopics = Array.isArray(data.trends) ? data.trends : [];
+
+      const formattedTopics = newTopics.map((topic, index) => ({
+        title: topic.title || `AI 播客选题 ${index + 1}`,
+        tag: topic.tag || "AI 推荐",
+        momentum: topic.momentum || `+${Math.floor(Math.random() * 20) + 10}%`,
+        summary: topic.summary || topic.reason || "该选题具备热点讨论度，适合展开播客内容。",
+        keywords: Array.isArray(topic.keywords)
+          ? topic.keywords
+          : ["AI", "Podcast", "Trend"],
+      }));
+
+      if (formattedTopics.length === 0) {
+        throw new Error("接口返回为空");
+      }
+
+      setTopics(formattedTopics);
+      setSelectedTopic(formattedTopics[0]);
+    } catch (error) {
+      console.error(error);
+      setTrendsError(error.message || "刷新趋势失败");
+    } finally {
+      setIsRefreshingTrends(false);
+    }
+  };
 
   const handleGenerateScript = async () => {
     const finalInput = `
@@ -190,7 +246,7 @@ function App() {
 
           {activePage === "discover" && (
             <DiscoverPage
-              topics={trendingTopics}
+              topics={topics}
               selectedTopic={selectedTopic}
               onSelectTopic={setSelectedTopic}
               inputText={inputText}
@@ -198,6 +254,9 @@ function App() {
               onGenerateScript={handleGenerateScript}
               isGenerating={isGenerating}
               generateError={generateError}
+              onRefreshTrends={handleRefreshTrends}
+              isRefreshingTrends={isRefreshingTrends}
+              trendsError={trendsError}
             />
           )}
 
@@ -250,6 +309,9 @@ function DiscoverPage({
   onGenerateScript,
   isGenerating,
   generateError,
+  onRefreshTrends,
+  isRefreshingTrends,
+  trendsError,
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -259,10 +321,21 @@ function DiscoverPage({
             <h3 className="text-xl font-semibold">趋势选题</h3>
             <p className="mt-1 text-sm text-slate-500">抓取近期讨论热度，帮助快速决定节目方向。</p>
           </div>
-          <button className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white">
-            刷新趋势
+          <button
+            type="button"
+            onClick={onRefreshTrends}
+            disabled={isRefreshingTrends}
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isRefreshingTrends ? "刷新中..." : "刷新趋势"}
           </button>
         </div>
+
+        {trendsError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {trendsError}
+          </div>
+        )}
 
         <div className="mt-6 space-y-4">
           {topics.map((topic) => {
