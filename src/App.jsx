@@ -503,7 +503,7 @@ function DraftPage({
       <Card>
         <h3 className="text-xl font-semibold">AI 对话式脚本生成</h3>
         <p className="mt-1 text-sm text-slate-500">
-          支持多语言、多结构、多轮指令，不再使用固定润色按钮。
+          支持多轮指令。
         </p>
 
         <div className="mt-6 rounded-3xl bg-slate-50 p-5">
