@@ -88,7 +88,7 @@ ${trendsText}
 ]
 `;
 
-    const kimiResponse = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+    const kimiResponse = await fetch("https://api.moonshot.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
