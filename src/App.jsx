@@ -38,23 +38,14 @@ const trendingTopics = [
   },
 ];
 
-const scriptSections = [
-  {
-    title: "开场 Hook",
-    duration: "00:45",
-    text: "欢迎来到今天的节目。过去一年里，AI 不只是一个工具，而是逐渐成为内容团队的新同事。它会提纲、会润色、甚至会主动拆解分发策略。",
-  },
-  {
-    title: "核心讨论",
-    duration: "04:20",
-    text: "这一轮内容生产升级的关键，不是单点能力提升，而是工作流被重新设计。选题、脚本、配音、剪辑和分发正在进入同一个自动化链路。",
-  },
-  {
-    title: "案例拆解",
-    duration: "03:10",
-    text: "比如一个播客团队可以先根据热点抓取趋势，再让 AI 生成初稿，随后根据受众画像生成多个版本，最后输出长音频和短视频切片。",
-  },
-];
+const initialScript = `开场 Hook
+欢迎来到今天的节目。过去一年里，AI 不只是一个工具，而是逐渐成为内容团队的新同事。它会提纲、会润色、甚至会主动拆解分发策略。
+
+核心讨论
+这一轮内容生产升级的关键，不是单点能力提升，而是工作流被重新设计。选题、脚本、配音、剪辑和分发正在进入同一个自动化链路。
+
+案例拆解
+比如一个播客团队可以先根据热点抓取趋势，再让 AI 生成初稿，随后根据受众画像生成多个版本，最后输出长音频和短视频切片。`;
 
 const voiceOptions = [
   { name: "主播 A · 沉稳科技感", language: "中文", speed: "1.0x" },
@@ -86,12 +77,53 @@ const clips = [
 function App() {
   const [activePage, setActivePage] = useState("discover");
   const [selectedTopic, setSelectedTopic] = useState(trendingTopics[0]);
-  const [scriptText, setScriptText] = useState(
-    scriptSections.map((section) => `${section.title}\n${section.text}`).join("\n\n"),
-  );
+  const [scriptText, setScriptText] = useState(initialScript);
   const [assistantMode, setAssistantMode] = useState("润色语气");
+  const [inputText, setInputText] = useState(
+    "请根据当前热点，生成一段适合中文播客的节目脚本。",
+  );
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState("");
 
   const pageTitle = pages.find((page) => page.id === activePage)?.label ?? "AI Podcast Studio";
+
+  const handleGenerateScript = async () => {
+    const finalInput = `
+选题：${selectedTopic.title}
+选题摘要：${selectedTopic.summary}
+用户补充内容：${inputText}
+`;
+
+    if (!finalInput.trim()) return;
+
+    setIsGenerating(true);
+    setGenerateError("");
+
+    try {
+      const res = await fetch("/api/generate-script", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: finalInput,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "脚本生成失败");
+      }
+
+      setScriptText(data.script || "");
+      setActivePage("draft");
+    } catch (error) {
+      setGenerateError(error.message || "生成失败，请稍后重试");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-mist text-ink">
@@ -146,7 +178,7 @@ function App() {
               <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Workspace</p>
               <h2 className="mt-2 text-3xl font-semibold">{pageTitle}</h2>
               <p className="mt-2 text-sm text-slate-500">
-                面向中文播客创作的 AI 工作台，当前为静态演示界面。
+                面向中文播客创作的 AI 工作台，已接入真实 AI 脚本生成接口。
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -161,8 +193,14 @@ function App() {
               topics={trendingTopics}
               selectedTopic={selectedTopic}
               onSelectTopic={setSelectedTopic}
+              inputText={inputText}
+              onInputTextChange={setInputText}
+              onGenerateScript={handleGenerateScript}
+              isGenerating={isGenerating}
+              generateError={generateError}
             />
           )}
+
           {activePage === "draft" && (
             <DraftPage
               selectedTopic={selectedTopic}
@@ -170,8 +208,14 @@ function App() {
               onScriptTextChange={setScriptText}
               assistantMode={assistantMode}
               onAssistantModeChange={setAssistantMode}
+              inputText={inputText}
+              onInputTextChange={setInputText}
+              onGenerateScript={handleGenerateScript}
+              isGenerating={isGenerating}
+              generateError={generateError}
             />
           )}
+
           {activePage === "audio" && <AudioPage voices={voiceOptions} />}
           {activePage === "clips" && <ClipsPage clips={clips} />}
         </main>
@@ -197,7 +241,16 @@ function Card({ className = "", children }) {
   );
 }
 
-function DiscoverPage({ topics, selectedTopic, onSelectTopic }) {
+function DiscoverPage({
+  topics,
+  selectedTopic,
+  onSelectTopic,
+  inputText,
+  onInputTextChange,
+  onGenerateScript,
+  isGenerating,
+  generateError,
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
       <Card>
@@ -262,17 +315,34 @@ function DiscoverPage({ topics, selectedTopic, onSelectTopic }) {
           </p>
         </div>
 
-        <div className="mt-8 space-y-4">
+        <div className="mt-6">
+          <label className="text-sm font-medium text-slate-600">补充热点内容 / 文章正文</label>
+          <textarea
+            value={inputText}
+            onChange={(event) => onInputTextChange(event.target.value)}
+            placeholder="粘贴新闻、社媒热点、文章摘要，AI 会基于该内容生成播客脚本。"
+            className="mt-3 min-h-[150px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none transition focus:border-brand-500 focus:bg-white"
+          />
+        </div>
+
+        {generateError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {generateError}
+          </div>
+        )}
+
+        <div className="mt-6 space-y-4">
           <div className="rounded-3xl bg-slate-50 p-5">
             <p className="text-sm font-medium text-slate-500">推荐节目形式</p>
             <p className="mt-2 text-lg font-semibold">单人解读 + 案例点评</p>
           </div>
-          <div className="rounded-3xl bg-slate-50 p-5">
-            <p className="text-sm font-medium text-slate-500">建议时长</p>
-            <p className="mt-2 text-lg font-semibold">8 - 12 分钟</p>
-          </div>
-          <button className="w-full rounded-2xl bg-brand-600 px-4 py-3 font-medium text-white">
-            用该选题生成脚本
+          <button
+            type="button"
+            onClick={onGenerateScript}
+            disabled={isGenerating}
+            className="w-full rounded-2xl bg-brand-600 px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isGenerating ? "AI 正在生成脚本..." : "用该选题生成脚本"}
           </button>
         </div>
       </Card>
@@ -286,6 +356,11 @@ function DraftPage({
   onScriptTextChange,
   assistantMode,
   onAssistantModeChange,
+  inputText,
+  onInputTextChange,
+  onGenerateScript,
+  isGenerating,
+  generateError,
 }) {
   const assists = ["润色语气", "扩展案例", "精简为 5 分钟", "改成访谈风格"];
 
@@ -293,11 +368,20 @@ function DraftPage({
     <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
       <Card>
         <h3 className="text-xl font-semibold">AI 助手</h3>
-        <p className="mt-1 text-sm text-slate-500">围绕当前主题，对脚本进行重写、扩展或压缩。</p>
+        <p className="mt-1 text-sm text-slate-500">围绕当前主题，对脚本进行生成、重写、扩展或压缩。</p>
 
         <div className="mt-6 rounded-3xl bg-slate-50 p-5">
           <p className="text-sm text-slate-500">当前主题</p>
           <p className="mt-2 text-lg font-semibold leading-8">{selectedTopic.title}</p>
+        </div>
+
+        <div className="mt-6">
+          <label className="text-sm font-medium text-slate-600">输入内容</label>
+          <textarea
+            value={inputText}
+            onChange={(event) => onInputTextChange(event.target.value)}
+            className="mt-3 min-h-[130px] w-full rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none transition focus:border-brand-500 focus:bg-white"
+          />
         </div>
 
         <div className="mt-6 space-y-3">
@@ -317,15 +401,19 @@ function DraftPage({
           ))}
         </div>
 
-        <div className="mt-6 rounded-3xl border border-dashed border-slate-300 p-5">
-          <p className="text-sm font-medium text-slate-500">建议操作</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            当前适合先用「{assistantMode}」统一语调，再继续进入音频生成。
-          </p>
-        </div>
+        {generateError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {generateError}
+          </div>
+        )}
 
-        <button className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white">
-          运行 AI 编辑
+        <button
+          type="button"
+          onClick={onGenerateScript}
+          disabled={isGenerating}
+          className="mt-6 w-full rounded-2xl bg-coral px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isGenerating ? "生成中..." : "运行 AI 生成"}
         </button>
       </Card>
 
@@ -339,8 +427,13 @@ function DraftPage({
             <button className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600">
               保存版本
             </button>
-            <button className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white">
-              自动续写
+            <button
+              type="button"
+              onClick={onGenerateScript}
+              disabled={isGenerating}
+              className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {isGenerating ? "生成中" : "自动续写"}
             </button>
           </div>
         </div>
@@ -378,13 +471,6 @@ function AudioPage({ voices }) {
             </div>
           ))}
         </div>
-
-        <div className="mt-6 grid grid-cols-2 gap-4">
-          <InfoPill label="背景音乐" value="轻电子 Ambient" />
-          <InfoPill label="降噪" value="已开启" />
-          <InfoPill label="片头片尾" value="自动生成" />
-          <InfoPill label="导出格式" value="MP3 / WAV" />
-        </div>
       </Card>
 
       <Card>
@@ -406,43 +492,7 @@ function AudioPage({ voices }) {
             </div>
           </div>
         </div>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-3">
-          <StatBlock label="预计生成时长" value="1m 20s" />
-          <StatBlock label="音频质量评分" value="92/100" />
-          <StatBlock label="导出队列" value="2 个任务" />
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button className="rounded-2xl bg-brand-600 px-5 py-3 font-medium text-white">
-            生成音频
-          </button>
-          <button className="rounded-2xl border border-slate-200 px-5 py-3 font-medium text-slate-700">
-            下载文件
-          </button>
-          <button className="rounded-2xl border border-slate-200 px-5 py-3 font-medium text-slate-700">
-            分享预览链接
-          </button>
-        </div>
       </Card>
-    </div>
-  );
-}
-
-function InfoPill({ label, value }) {
-  return (
-    <div className="rounded-3xl bg-slate-50 p-4">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-2 font-medium">{value}</p>
-    </div>
-  );
-}
-
-function StatBlock({ label, value }) {
-  return (
-    <div className="rounded-3xl bg-slate-50 p-5">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
     </div>
   );
 }
