@@ -539,9 +539,9 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
   const currentVoice = voices[selectedVoiceIndex];
 
   const elevenLabsVoiceIds = [
-    "21m00Tcm4TlvDq8ikWAM",
-    "EXAVITQu4vr4xnSDxMaL",
-    "ErXwobaYiN019PkySvjV",
+    "hZTuv9Zqrq4yHYrEmF1r",
+    "DowyQ68vDpgFYdWVGjc3",
+    "bhJUNIXWQQ94l8eI2VUf",
   ];
 
   const handlePlayAudio = async () => {
