@@ -10,15 +10,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No input provided" });
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.moonshot.cn/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 400,
+        model: "moonshot-v1-8k", // 👈 Kimi模型
         messages: [
           {
             role: "system",
@@ -29,6 +28,7 @@ export default async function handler(req, res) {
             content: `根据以下内容生成一个结构清晰、有吸引力的播客脚本：${input}`,
           },
         ],
+        temperature: 0.7,
       }),
     });
 
