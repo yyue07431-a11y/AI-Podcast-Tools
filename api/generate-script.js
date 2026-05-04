@@ -10,7 +10,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No input provided" });
     }
 
-    const response = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+    const response = await fetch("https://api.moonshot.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
