@@ -275,7 +275,14 @@ function App() {
             />
           )}
 
-          {activePage === "audio" && <AudioPage voices={voiceOptions} />}
+          {activePage === "audio" && (
+            <AudioPage
+              voices={voiceOptions}
+              scriptText={scriptText}
+              selectedTopic={selectedTopic}
+            />
+          )}
+
           {activePage === "clips" && <ClipsPage clips={clips} />}
         </main>
       </div>
@@ -521,7 +528,78 @@ function DraftPage({
   );
 }
 
-function AudioPage({ voices }) {
+function AudioPage({ voices, scriptText, selectedTopic }) {
+  const [selectedVoiceIndex, setSelectedVoiceIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioError, setAudioError] = useState("");
+
+  const currentVoice = voices[selectedVoiceIndex];
+
+  const handlePlayAudio = () => {
+    setAudioError("");
+
+    if (!scriptText || !scriptText.trim()) {
+      setAudioError("请先在脚本草稿页生成或填写播客脚本。");
+      return;
+    }
+
+    if (!window.speechSynthesis) {
+      setAudioError("当前浏览器不支持语音播放，请使用 Chrome 浏览器测试。");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(scriptText);
+    utterance.lang = "zh-CN";
+
+    const browserVoices = window.speechSynthesis.getVoices();
+    const chineseVoice =
+      browserVoices.find((voice) => voice.lang.includes("zh")) ||
+      browserVoices[0];
+
+    if (chineseVoice) {
+      utterance.voice = chineseVoice;
+    }
+
+    if (selectedVoiceIndex === 0) {
+      utterance.rate = 1;
+      utterance.pitch = 1;
+    }
+
+    if (selectedVoiceIndex === 1) {
+      utterance.rate = 1.1;
+      utterance.pitch = 1.05;
+    }
+
+    if (selectedVoiceIndex === 2) {
+      utterance.rate = 0.95;
+      utterance.pitch = 0.95;
+    }
+
+    utterance.onstart = () => {
+      setIsPlaying(true);
+    };
+
+    utterance.onend = () => {
+      setIsPlaying(false);
+    };
+
+    utterance.onerror = () => {
+      setIsPlaying(false);
+      setAudioError("音频播放失败，请刷新页面后重试。");
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleStopAudio = () => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlaying(false);
+  };
+
   return (
     <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
       <Card>
@@ -530,10 +608,14 @@ function AudioPage({ voices }) {
 
         <div className="mt-6 space-y-4">
           {voices.map((voice, index) => (
-            <div
+            <button
+              type="button"
               key={voice.name}
-              className={`rounded-3xl border p-5 ${
-                index === 0 ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white"
+              onClick={() => setSelectedVoiceIndex(index)}
+              className={`w-full rounded-3xl border p-5 text-left transition ${
+                selectedVoiceIndex === index
+                  ? "border-brand-500 bg-brand-50"
+                  : "border-slate-200 bg-white hover:border-slate-300"
               }`}
             >
               <div className="flex items-center justify-between">
@@ -541,27 +623,78 @@ function AudioPage({ voices }) {
                 <span className="text-xs text-slate-500">{voice.speed}</span>
               </div>
               <p className="mt-2 text-sm text-slate-500">{voice.language}</p>
-            </div>
+            </button>
           ))}
         </div>
+
+        {audioError && (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {audioError}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={handlePlayAudio}
+          className="mt-6 w-full rounded-2xl bg-brand-600 px-4 py-3 font-medium text-white"
+        >
+          {isPlaying ? "重新生成并播放" : "生成音频"}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleStopAudio}
+          className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-700"
+        >
+          停止播放
+        </button>
       </Card>
 
       <Card>
         <div className="rounded-[30px] bg-gradient-to-br from-ink via-slate-800 to-brand-700 p-6 text-white">
           <p className="text-sm text-white/70">生成预览</p>
-          <h3 className="mt-2 text-2xl font-semibold">AI Podcast Episode #08</h3>
+          <h3 className="mt-2 text-2xl font-semibold">
+            {selectedTopic?.title || "AI Podcast Episode #08"}
+          </h3>
+
           <div className="mt-8 rounded-3xl bg-white/10 p-5">
             <div className="flex items-center justify-between text-sm text-white/80">
-              <span>00:42</span>
-              <span>08:12</span>
+              <span>{isPlaying ? "Playing" : "00:00"}</span>
+              <span>{currentVoice?.speed || "1.0x"}</span>
             </div>
+
             <div className="mt-3 h-2 rounded-full bg-white/15">
-              <div className="h-2 w-1/3 rounded-full bg-gold" />
+              <div
+                className={`h-2 rounded-full bg-gold transition-all duration-500 ${
+                  isPlaying ? "w-2/3" : "w-1/3"
+                }`}
+              />
             </div>
+
             <div className="mt-6 flex items-center justify-center gap-4">
-              <button className="rounded-full bg-white/10 px-4 py-3">↺</button>
-              <button className="rounded-full bg-white px-6 py-3 font-semibold text-ink">播放</button>
-              <button className="rounded-full bg-white/10 px-4 py-3">↻</button>
+              <button
+                type="button"
+                onClick={handleStopAudio}
+                className="rounded-full bg-white/10 px-4 py-3"
+              >
+                ↺
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePlayAudio}
+                className="rounded-full bg-white px-6 py-3 font-semibold text-ink"
+              >
+                {isPlaying ? "播放中" : "播放"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleStopAudio}
+                className="rounded-full bg-white/10 px-4 py-3"
+              >
+                ↻
+              </button>
             </div>
           </div>
         </div>
