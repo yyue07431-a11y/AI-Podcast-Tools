@@ -1,6 +1,14 @@
 export default async function handler(req, res) {
   try {
-    const { text, voice = "female" } = req.body;
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const { text, voice = "female" } = req.body || {};
+
+    if (!text) {
+      return res.status(400).json({ error: "Missing text" });
+    }
 
     const appid = process.env.VOLC_APP_ID;
     const token = process.env.VOLC_ACCESS_TOKEN;
@@ -17,37 +25,40 @@ export default async function handler(req, res) {
           "Content-Type": "application/json",
           Authorization: `Bearer;${token}`,
         },
-       body: JSON.stringify({
-  app: {
-    appid,
-    token,
-    cluster,
-  },
-  user: {
-    uid: "podcast-user",
-  },
-  audio: {
-    voice_type: voiceType,
-    encoding: "mp3",
-    speed_ratio: 1.0,
-  },
-  request: {
-    reqid: Date.now().toString(),
-    text,
-    text_type: "plain",
-    operation: "query",
-  },
-}),
+        body: JSON.stringify({
+          app: {
+            appid,
+            token,
+            cluster,
+          },
+          user: {
+            uid: "podcast-user",
+          },
+          audio: {
+            voice_type: voiceType,
+            encoding: "mp3",
+            speed_ratio: 1.0,
+          },
+          request: {
+            reqid: Date.now().toString(),
+            text,
+            text_type: "plain",
+            operation: "query",
+          },
+        }),
+      }
+    );
 
+    // 🔥 一定要分开写（避免语法错误）
     const raw = await response.text();
 
     let data;
     try {
       data = JSON.parse(raw);
-    } catch {
+    } catch (err) {
       return res.status(500).json({
-        error: "火山返回非JSON",
-        detail: raw.slice(0, 200),
+        error: "JSON parse failed",
+        detail: raw,
       });
     }
 
@@ -58,7 +69,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔥 核心：base64 → 音频
     const audioBuffer = Buffer.from(data.data, "base64");
 
     res.setHeader("Content-Type", "audio/mpeg");
