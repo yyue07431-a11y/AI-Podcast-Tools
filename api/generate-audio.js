@@ -1,98 +1,61 @@
 export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
+  }
 
-    const { text } = req.body || {};
+  try {
+    const { text, voiceId } = req.body || {};
 
     if (!text || !String(text).trim()) {
       return res.status(400).json({ error: "Missing text" });
     }
 
-    const appid = process.env.VOLC_APP_ID;
-    const apiKey = process.env.VOLC_API_KEY;
-    const resourceId = process.env.VOLC_RESOURCE_ID;
+    const apiKey = process.env.ELEVENLABS_API_KEY;
 
-    if (!appid || !apiKey || !resourceId) {
-      return res.status(500).json({
-        error: "Missing Volcengine config",
-        detail: "请检查 VOLC_APP_ID / VOLC_API_KEY / VOLC_RESOURCE_ID",
-      });
+    if (!apiKey) {
+      return res.status(500).json({ error: "Missing ELEVENLABS_API_KEY" });
     }
 
+    const finalVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM";
+
     const response = await fetch(
-      "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+      `https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`,
       {
         method: "POST",
         headers: {
+          "xi-api-key": apiKey,
           "Content-Type": "application/json",
-          "X-Api-App-Key": appid,
-          "X-Api-Access-Key": apiKey,
-          "X-Api-Resource-Id": resourceId,
+          Accept: "audio/mpeg",
         },
         body: JSON.stringify({
-          app: {
-            appid,
-          },
-          user: {
-            uid: "podcast-user",
-          },
-          audio: {
-            voice_type: "zh_female_vv_uranus_bigtts",
-            encoding: "mp3",
-            speed_ratio: 1.0,
-            volume_ratio: 1.0,
-            pitch_ratio: 1.0,
-          },
-          request: {
-            reqid: Date.now().toString(),
-            text: String(text).slice(0, 2000),
-            text_type: "plain",
+          text: String(text).slice(0, 2500),
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
           },
         }),
       },
     );
 
     if (!response.ok) {
-      const err = await response.text();
-
-      console.error("Volc V3 status:", response.status);
-      console.error("Volc V3 error:", err);
+      const rawText = await response.text();
 
       return res.status(response.status).json({
-        error: "V3 TTS failed",
-        status: response.status,
-        detail: err,
+        error: "ElevenLabs TTS failed",
+        detail: rawText,
       });
     }
 
-    const reader = response.body.getReader();
-    const chunks = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(Buffer.from(value));
-    }
-
-    const audioBuffer = Buffer.concat(chunks);
-
-    if (!audioBuffer.length) {
-      return res.status(500).json({
-        error: "Empty audio response",
-      });
-    }
+    const audioBuffer = await response.arrayBuffer();
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
 
-    return res.status(200).send(audioBuffer);
-  } catch (err) {
-    console.error("TTS handler error:", err);
-
+    return res.status(200).send(Buffer.from(audioBuffer));
+  } catch (error) {
     return res.status(500).json({
-      error: err.message || "Audio generation failed",
+      error: error.message || "Audio generation failed",
     });
   }
 }
