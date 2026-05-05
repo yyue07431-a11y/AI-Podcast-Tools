@@ -749,26 +749,26 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
       });
 
       // 🔥 只读一次 response（修复你刚刚的 bug）
-      if (!res.ok) {
-        const rawText = await res.text();
+     if (!res.ok) {
+  const rawText = await res.text();
 
-        let data = null;
-        try {
-          data = JSON.parse(rawText);
-        } catch {}
+  let data = null;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    data = null;
+  }
 
-        const message =
-          data?.error ||
-          data?.message ||
-          (typeof data?.detail === "string"
-            ? data.detail
-            : data?.detail
-            ? JSON.stringify(data.detail)
-            : rawText || "音频生成失败");
+  const message =
+    data?.error && data?.detail
+      ? `${data.error}: ${typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)}`
+      : data?.error ||
+        data?.message ||
+        rawText ||
+        "音频生成失败";
 
-        throw new Error(message);
-      }
-
+  throw new Error(message);
+}
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
 
