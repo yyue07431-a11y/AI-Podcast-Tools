@@ -22,15 +22,17 @@ export default async function handler(req, res) {
       });
     }
 
-    const { text, voiceId } = req.body || {};
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    const { text, voiceId } = body;
 
-    if (!text || !text.trim()) {
+    if (!text || !String(text).trim()) {
       return res.status(400).json({
         error: "Missing text.",
       });
     }
 
-    const finalVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM"; // Rachel 默认声音
+    const finalText = String(text).slice(0, 2500);
+    const finalVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM";
 
     const elevenRes = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`,
@@ -42,7 +44,7 @@ export default async function handler(req, res) {
           Accept: "audio/mpeg",
         },
         body: JSON.stringify({
-          text,
+          text: finalText,
           model_id: "eleven_multilingual_v2",
           voice_settings: {
             stability: 0.45,
@@ -67,7 +69,7 @@ export default async function handler(req, res) {
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
 
-    return res.send(Buffer.from(audioBuffer));
+    return res.status(200).send(Buffer.from(audioBuffer));
   } catch (error) {
     return res.status(500).json({
       error: error.message || "Internal server error",
