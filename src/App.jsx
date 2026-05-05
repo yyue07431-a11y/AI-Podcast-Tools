@@ -770,7 +770,20 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
         let message = "音频生成失败，请检查 generate-audio 接口。";
         try {
           const data = await res.json();
-          message = data.detail || data.error || message;
+          let message = "音频生成失败，请检查 generate-audio 接口。";
+
+try {
+  const data = await res.json();
+
+  message =
+    data?.error ||
+    data?.message ||
+    (typeof data?.detail === "string"
+      ? data.detail
+      : JSON.stringify(data?.detail || {}));
+} catch {
+  message = await res.text();
+}
         } catch {
           message = await res.text();
         }
