@@ -1023,7 +1023,7 @@ function ClipsPage({ scriptText, selectedTopics }) {
             disabled={isGeneratingClips}
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isGeneratingClips ? "生成中..." : "生成热点切片"}
+            {isGeneratingClips ? "生成中..." : "生成"}
           </button>
         </div>
 
