@@ -1,76 +1,39 @@
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Method not allowed. Use POST.",
-    });
-  }
-
   try {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const { text } = req.body;
 
-    if (!apiKey) {
-      return res.status(500).json({
-        error: "Missing ELEVENLABS_API_KEY in Vercel environment variables.",
-      });
+    if (!text) {
+      return res.status(400).json({ error: "Missing text" });
     }
 
-    const { text, voiceId } = req.body || {};
+    // ⚠️ 这里只是示例（阿里云 TTS 需要 token）
+    // 实际推荐你用更简单方案👇
 
-    if (!text || !text.trim()) {
-      return res.status(400).json({
-        error: "Missing text.",
-      });
-    }
-
-    const finalVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM"; // Rachel 默认声音
-
-    const elevenRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": apiKey,
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: {
-            stability: 0.45,
-            similarity_boost: 0.8,
-            style: 0.35,
-            use_speaker_boost: true,
-          },
-        }),
+    const response = await fetch("https://api.moonshot.ai/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        model: "moonshot-v1-tts",   // 👉 Kimi TTS（更简单）
+        input: text,
+        voice: "female",
+      }),
+    });
 
-    if (!elevenRes.ok) {
-      const errorText = await elevenRes.text();
-      return res.status(elevenRes.status).json({
-        error: "ElevenLabs API error",
-        detail: errorText,
-      });
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(err);
     }
 
-    const audioBuffer = await elevenRes.arrayBuffer();
+    const audioBuffer = await response.arrayBuffer();
 
     res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-
-    return res.send(Buffer.from(audioBuffer));
+    res.send(Buffer.from(audioBuffer));
   } catch (error) {
-    return res.status(500).json({
-      error: error.message || "Internal server error",
+    res.status(500).json({
+      error: error.message,
     });
   }
 }
