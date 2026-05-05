@@ -7,9 +7,10 @@ export default async function handler(req, res) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer;${process.env.VOLC_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
+  "Content-Type": "application/json",
+  Authorization: `Bearer;${process.env.VOLC_ACCESS_TOKEN}`,
+  "X-Api-Resource-Id": process.env.VOLC_RESOURCE_ID,
+},
         body: JSON.stringify({
           app: {
             appid: process.env.VOLC_APP_ID,
