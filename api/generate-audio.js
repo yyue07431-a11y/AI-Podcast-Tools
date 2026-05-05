@@ -32,12 +32,14 @@ export default async function handler(req, res) {
     );
 
     if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({
-        error: "V3 TTS failed",
-        detail: err,
-      });
-    }
+  const err = await response.text();
+
+  return res.status(response.status).json({
+    error: "V3 TTS failed",
+    status: response.status,
+    detail: err.slice(0, 1000),
+  });
+}
 
     // 🔥 关键：直接流转发（不用再 base64）
     res.setHeader("Content-Type", "audio/mpeg");
