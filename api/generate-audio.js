@@ -17,28 +17,27 @@ export default async function handler(req, res) {
           "Content-Type": "application/json",
           Authorization: `Bearer;${token}`,
         },
-        body: JSON.stringify({
-          app: {
-            appid,
-            token,
-            cluster,
-          },
-          user: {
-            uid: "podcast-user",
-          },
-          audio: {
-            voice_type: voiceType,
-            encoding: "mp3",
-            speed_ratio: 1.0,
-          },
-          request: {
-            reqid: Date.now().toString(),
-            text,
-            text_type: "plain",
-          },
-        }),
-      }
-    );
+       body: JSON.stringify({
+  app: {
+    appid,
+    token,
+    cluster,
+  },
+  user: {
+    uid: "podcast-user",
+  },
+  audio: {
+    voice_type: voiceType,
+    encoding: "mp3",
+    speed_ratio: 1.0,
+  },
+  request: {
+    reqid: Date.now().toString(),
+    text,
+    text_type: "plain",
+    operation: "query",
+  },
+}),
 
     const raw = await response.text();
 
