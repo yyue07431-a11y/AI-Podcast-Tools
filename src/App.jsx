@@ -766,30 +766,27 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
         }),
       });
 
-      if (!res.ok) {
-        let message = "音频生成失败，请检查 generate-audio 接口。";
-        try {
-          const data = await res.json();
-          let message = "音频生成失败，请检查 generate-audio 接口。";
+    if (!res.ok) {
+  const rawText = await res.text();
 
-try {
-  const data = await res.json();
+  let data = null;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    data = null;
+  }
 
-  message =
+  const message =
     data?.error ||
     data?.message ||
     (typeof data?.detail === "string"
       ? data.detail
-      : JSON.stringify(data?.detail || {}));
-} catch {
-  message = await res.text();
-}
-        } catch {
-          message = await res.text();
-        }
-        throw new Error(message);
-      }
+      : data?.detail
+        ? JSON.stringify(data.detail)
+        : rawText || "音频生成失败，请检查 generate-audio 接口。");
 
+  throw new Error(message);
+}
       const blob = await res.blob();
 
       if (!blob || blob.size === 0) {
