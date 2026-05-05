@@ -25,13 +25,17 @@ export default async function handler(req, res) {
       "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
       {
         method: "POST",
-      headers: {
+     headers: {
   "Content-Type": "application/json",
-  Authorization: `Bearer;${token}`,
-  "X-Api-Resource-Id": resourceId,
-  "x-api-resource-id": resourceId,
+
   "X-Api-App-Key": appid,
+  "X-Api-Access-Key": token,
+  "X-Api-Resource-Id": resourceId,
+
+  // 保留小写兼容
   "x-api-app-key": appid,
+  "x-api-access-key": token,
+  "x-api-resource-id": resourceId,
 },
         body: JSON.stringify({
           app: {
