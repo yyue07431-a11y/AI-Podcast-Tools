@@ -698,6 +698,7 @@ function DraftPage({
 
 function AudioPage({ voices, scriptText, selectedTopic }) {
   const [selectedVoiceIndex, setSelectedVoiceIndex] = useState(0);
+  const [audioMode, setAudioMode] = useState("single");
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioError, setAudioError] = useState("");
@@ -705,13 +706,31 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
   const [progress, setProgress] = useState(0);
   const audioRef = useRef(null);
 
-  const currentVoice = voices[selectedVoiceIndex];
-
-  const elevenLabsVoiceIds = [
-    "hZTuv9Zqrq4yHYrEmF1r",
-    "DowyQ68vDpgFYdWVGjc3",
-    "bhJUNIXWQQ94l8eI2VUf",
+  const kimiVoiceOptions = [
+    {
+      name: "女主播 · 清晰自然",
+      voice: "female",
+      language: "中文",
+      speed: "1.0x",
+      desc: "适合知识类、商业类、热点解读。",
+    },
+    {
+      name: "男主播 · 稳重叙事",
+      voice: "male",
+      language: "中文",
+      speed: "1.0x",
+      desc: "适合深度分析、新闻播报、观点评论。",
+    },
+    {
+      name: "双人播客 · 男女对话",
+      voice: "dual",
+      language: "中文",
+      speed: "1.0x",
+      desc: "适合访谈感、讨论感更强的播客内容。",
+    },
   ];
+
+  const currentVoice = kimiVoiceOptions[selectedVoiceIndex];
 
   const handleGenerateAudio = async () => {
     setAudioError("");
@@ -726,10 +745,25 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
       setIsGeneratingAudio(true);
       setIsPlaying(false);
 
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        setAudioUrl("");
+      }
+
       const res = await fetch("/api/generate-audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: scriptText, voiceId: elevenLabsVoiceIds[selectedVoiceIndex] }),
+        body: JSON.stringify({
+          text: scriptText,
+          provider: "kimi",
+          mode: audioMode,
+          voice: currentVoice?.voice || "female",
+          voices: {
+            hostA: "female",
+            hostB: "male",
+          },
+          title: selectedTopic?.title || "AI Podcast Episode",
+        }),
       });
 
       if (!res.ok) {
@@ -744,13 +778,23 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
       }
 
       const blob = await res.blob();
+
+      if (!blob || blob.size === 0) {
+        throw new Error("音频为空，请检查后端 TTS 返回。");
+      }
+
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
 
-      setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.play();
-          setIsPlaying(true);
+      setTimeout(async () => {
+        try {
+          if (audioRef.current) {
+            audioRef.current.src = url;
+            await audioRef.current.play();
+            setIsPlaying(true);
+          }
+        } catch {
+          setAudioError("音频已生成，但浏览器阻止了自动播放，请点击播放。");
         }
       }, 300);
     } catch (error) {
@@ -776,18 +820,62 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
     }
   };
 
+  const handleStopAudio = () => {
+    if (!audioRef.current) return;
+
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+    setIsPlaying(false);
+    setProgress(0);
+  };
+
   return (
     <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
       <Card>
         <h3 className="text-xl font-semibold">语音参数</h3>
-        <p className="mt-1 text-sm text-slate-500">生成后自动播放，也可以手动播放或暂停。</p>
+        <p className="mt-1 text-sm text-slate-500">
+          使用 Kimi TTS 生成中文播客音频，可选择单人主播或双人播客模式。
+        </p>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setAudioMode("single")}
+            className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+              audioMode === "single"
+                ? "border-ink bg-ink text-white"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            单人主播
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAudioMode("dual")}
+            className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
+              audioMode === "dual"
+                ? "border-ink bg-ink text-white"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            双人播客
+          </button>
+        </div>
 
         <div className="mt-6 space-y-4">
-          {voices.map((voice, index) => (
+          {kimiVoiceOptions.map((voice, index) => (
             <button
               type="button"
               key={voice.name}
-              onClick={() => setSelectedVoiceIndex(index)}
+              onClick={() => {
+                setSelectedVoiceIndex(index);
+                if (voice.voice === "dual") {
+                  setAudioMode("dual");
+                } else {
+                  setAudioMode("single");
+                }
+              }}
               className={`w-full rounded-3xl border p-5 text-left transition ${
                 selectedVoiceIndex === index
                   ? "border-brand-500 bg-brand-50"
@@ -799,9 +887,17 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
                 <span className="text-xs text-slate-500">{voice.speed}</span>
               </div>
               <p className="mt-2 text-sm text-slate-500">{voice.language}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{voice.desc}</p>
             </button>
           ))}
         </div>
+
+        {audioMode === "dual" && (
+          <div className="mt-5 rounded-3xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+            双人播客模式会把脚本按 A/B、主持人/嘉宾、问答段落等结构交给后端处理。
+            如果脚本还不是对话体，建议先在草稿页让 AI 改成「主持人 A + 嘉宾 B」格式。
+          </div>
+        )}
 
         {audioError && (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -845,15 +941,20 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
 
           <div className="mt-8 rounded-3xl bg-white/10 p-5">
             <div className="flex items-center justify-between text-sm text-white/80">
-              <span>{isGeneratingAudio ? "Generating" : isPlaying ? "Playing" : "Ready"}</span>
-              <span>{currentVoice?.speed || "1.0x"}</span>
+              <span>
+                {isGeneratingAudio ? "Generating" : isPlaying ? "Playing" : audioUrl ? "Ready" : "Not generated"}
+              </span>
+              <span>{currentVoice?.name || "Kimi TTS"}</span>
             </div>
 
             <div className="mt-3 h-2 rounded-full bg-white/15">
-              <div className="h-2 rounded-full bg-gold transition-all duration-500" style={{ width: `${progress}%` }} />
+              <div
+                className="h-2 rounded-full bg-gold transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
             </div>
 
-            <div className="mt-6 flex items-center justify-center gap-4">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
               <button
                 type="button"
                 onClick={handleTogglePlay}
@@ -861,6 +962,15 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
                 className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-ink shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isPlaying ? "暂停" : "播放"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleStopAudio}
+                disabled={!audioUrl}
+                className="rounded-full bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                重置
               </button>
 
               <a
@@ -872,6 +982,13 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
               >
                 下载
               </a>
+            </div>
+
+            <div className="mt-6 rounded-3xl bg-white/10 p-4">
+              <p className="text-xs text-white/60">当前模式</p>
+              <p className="mt-1 text-sm font-medium">
+                {audioMode === "dual" ? "双人播客" : "单人主播"} · {currentVoice?.name}
+              </p>
             </div>
           </div>
         </div>
