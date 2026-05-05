@@ -1,6 +1,3 @@
-// 真实热点方向：Google Trends / Google News RSS / Reddit -> Kimi分析
-// 注意：Kimi国际版 endpoint 固定用 https://api.moonshot.ai/v1/chat/completions
-
 async function fetchText(url) {
   const response = await fetch(url, {
     headers: {
@@ -15,23 +12,32 @@ async function fetchText(url) {
   return response.text();
 }
 
+function decodeHtml(text = "") {
+  return String(text)
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 function extractRssItems(xml, source, platform, limit = 8) {
   const items = [...xml.matchAll(/<item>[\s\S]*?<\/item>/g)].slice(0, limit);
 
   return items.map((match, index) => {
     const item = match[0];
-    const title = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/)?.[1]
-      || item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/)?.[2]
-      || `${platform} 热点 ${index + 1}`;
 
-    const description =
-      item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/)?.[1] ||
-      item.match(/<description>(.*?)<\/description>/)?.[1] ||
-      "";
+    const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/);
+    const descMatch =
+      item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) ||
+      item.match(/<description>(.*?)<\/description>/);
+
+    const title = decodeHtml(titleMatch?.[1] || `${platform} 热点 ${index + 1}`);
+    const description = decodeHtml(descMatch?.[1] || "");
 
     return {
-      title: title.replace(/&amp;/g, "&").replace(/&#39;/g, "'"),
-      summary: description.replace(/<[^>]+>/g, "").slice(0, 180),
+      title: title.replace(/<[^>]+>/g, "").trim(),
+      summary: description.replace(/<[^>]+>/g, "").slice(0, 180).trim(),
       source,
       platform,
     };
@@ -64,12 +70,14 @@ async function fetchRedditHot() {
       const data = await response.json();
 
       const posts =
-        data?.data?.children?.map((item) => ({
-          title: item?.data?.title,
-          summary: item?.data?.selftext?.slice(0, 180) || "",
-          source: `Reddit r/${subreddit}`,
-          platform: "Reddit",
-        })) || [];
+        data?.data?.children
+          ?.map((item) => ({
+            title: item?.data?.title,
+            summary: item?.data?.selftext?.slice(0, 180) || "",
+            source: `Reddit r/${subreddit}`,
+            platform: "Reddit",
+          }))
+          .filter((item) => item.title) || [];
 
       results.push(...posts);
     } catch {
@@ -78,6 +86,56 @@ async function fetchRedditHot() {
   }
 
   return results;
+}
+
+function extractJsonObject(text = "") {
+  const cleaned = String(text)
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+
+  if (start === -1 || end === -1) {
+    throw new Error("AI 没有返回 JSON 对象");
+  }
+
+  return cleaned.slice(start, end + 1);
+}
+
+function safeParseAiJson(content = "") {
+  try {
+    return JSON.parse(content);
+  } catch {
+    const jsonText = extractJsonObject(content);
+
+    try {
+      return JSON.parse(jsonText);
+    } catch (error) {
+      throw new Error(`AI 返回的 JSON 格式不合法，请重新点击刷新。原始错误：${error.message}`);
+    }
+  }
+}
+
+function normalizeTrendItem(item, index) {
+  const categoryList = ["政治", "名人", "娱乐", "社会", "科技", "商业"];
+  const category = categoryList.includes(item?.category) ? item.category : "社会";
+
+  const tags = Array.isArray(item?.tags)
+    ? item.tags.filter(Boolean).slice(0, 5)
+    : ["真实热点", "趋势观察", "内容选题"];
+
+  return {
+    id: String(Date.now() + index),
+    title: String(item?.title || `真实热点 ${index + 1}`).trim(),
+    source: String(item?.source || item?.platform || "真实数据源").trim(),
+    platform: String(item?.platform || item?.source || "真实数据源").trim(),
+    category,
+    heat: Number.isFinite(Number(item?.heat)) ? Number(item.heat) : 80,
+    summary: String(item?.summary || "该热点具备讨论度，适合展开播客内容。").trim(),
+    tags,
+  };
 }
 
 async function analyzeWithKimi(rawTopics) {
@@ -109,7 +167,12 @@ ${index + 1}. 【${item.platform}】${item.title}
   )
   .join("\n")}
 
-严格返回 JSON，不要 markdown，不要解释：
+严格返回合法 JSON。
+不要 markdown。
+不要解释。
+不要在数组元素之间漏逗号。
+不要使用尾随逗号。
+格式必须完全如下：
 {
   "trends": [
     {
@@ -119,7 +182,7 @@ ${index + 1}. 【${item.platform}】${item.title}
       "category": "科技",
       "heat": 88,
       "summary": "",
-      "tags": ["", "", ""]
+      "tags": ["标签1", "标签2", "标签3"]
     }
   ]
 }
@@ -136,14 +199,15 @@ ${index + 1}. 【${item.platform}】${item.title}
       messages: [
         {
           role: "system",
-          content: "你是严格返回合法 JSON 的热点分析助手。",
+          content:
+            "你是严格返回合法 JSON 的热点分析助手。只能输出 JSON 对象，不能输出 markdown、解释、注释或多余文本。",
         },
         {
           role: "user",
           content: prompt,
         },
       ],
-      temperature: 0.4,
+      temperature: 0.2,
     }),
   });
 
@@ -153,7 +217,7 @@ ${index + 1}. 【${item.platform}】${item.title}
   try {
     data = JSON.parse(raw);
   } catch {
-    throw new Error(`Kimi API 返回非 JSON: ${raw.slice(0, 200)}`);
+    throw new Error(`Kimi API 返回非 JSON: ${raw.slice(0, 300)}`);
   }
 
   if (!response.ok) {
@@ -161,14 +225,11 @@ ${index + 1}. 【${item.platform}】${item.title}
   }
 
   const content = data.choices?.[0]?.message?.content || "";
+  const parsed = safeParseAiJson(content);
 
-  try {
-    return JSON.parse(content);
-  } catch {
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("AI 内容不是 JSON");
-    return JSON.parse(match[0]);
-  }
+  return {
+    trends: Array.isArray(parsed.trends) ? parsed.trends : [],
+  };
 }
 
 export default async function handler(req, res) {
@@ -195,9 +256,12 @@ export default async function handler(req, res) {
 
     const analyzed = await analyzeWithKimi(rawTopics.slice(0, 25));
 
+    const trends = analyzed.trends.map((item, index) => normalizeTrendItem(item, index));
+
     return res.status(200).json({
-      trends: Array.isArray(analyzed.trends) ? analyzed.trends : [],
+      trends,
       rawCount: rawTopics.length,
+      sources: ["Google News RSS", "Reddit Hot"],
     });
   } catch (error) {
     return res.status(500).json({
