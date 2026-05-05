@@ -705,35 +705,46 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
   const [progress, setProgress] = useState(0);
   const audioRef = useRef(null);
 
-  const volcVoices = [
+  const elevenVoices = [
     {
       name: "女主播 · 清晰自然",
-      voice: "female",
-      language: "中文",
+      voiceId: "21m00Tcm4TlvDq8ikWAM",
+      language: "中文 / 英文",
       speed: "1.0x",
     },
     {
       name: "男主播 · 稳重叙事",
-      voice: "male",
-      language: "中文",
+      voiceId: "ErXwobaYiN019PkySvjV",
+      language: "中文 / 英文",
+      speed: "1.0x",
+    },
+    {
+      name: "新闻感主播",
+      voiceId: "EXAVITQu4vr4xnSDxMaL",
+      language: "中文 / 英文",
       speed: "1.0x",
     },
   ];
 
-  const currentVoice = volcVoices[selectedVoiceIndex];
+  const currentVoice = elevenVoices[selectedVoiceIndex];
 
   const handleGenerateAudio = async () => {
     setAudioError("");
     setProgress(0);
 
     if (!scriptText?.trim()) {
-      setAudioError("请先生成播客脚本。");
+      setAudioError("请先在脚本草稿页生成或填写播客脚本。");
       return;
     }
 
     try {
       setIsGeneratingAudio(true);
       setIsPlaying(false);
+
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        setAudioUrl("");
+      }
 
       const res = await fetch("/api/generate-audio", {
         method: "POST",
@@ -742,43 +753,44 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
         },
         body: JSON.stringify({
           text: scriptText,
-          voice: currentVoice?.voice || "female",
-          speed: 1.0,
-          title: selectedTopic?.title || "podcast",
+          voiceId: currentVoice.voiceId,
         }),
       });
 
-      // 🔥 只读一次 response（修复你刚刚的 bug）
-     if (!res.ok) {
-  const rawText = await res.text();
+      if (!res.ok) {
+        const rawText = await res.text();
 
-  let data = null;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    data = null;
-  }
+        let data = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {}
 
-  const message =
-    data?.error && data?.detail
-      ? `${data.error}: ${typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)}`
-      : data?.error ||
-        data?.message ||
-        rawText ||
-        "音频生成失败";
+        const message =
+          data?.error && data?.detail
+            ? `${data.error}: ${typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)}`
+            : data?.error || data?.message || rawText || "音频生成失败";
 
-  throw new Error(message);
-}
+        throw new Error(message);
+      }
+
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
 
+      if (!blob || blob.size === 0) {
+        throw new Error("音频为空，请检查 ElevenLabs 返回。");
+      }
+
+      const url = URL.createObjectURL(blob);
       setAudioUrl(url);
 
-      setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.src = url;
-          audioRef.current.play();
-          setIsPlaying(true);
+      setTimeout(async () => {
+        try {
+          if (audioRef.current) {
+            audioRef.current.src = url;
+            await audioRef.current.play();
+            setIsPlaying(true);
+          }
+        } catch {
+          setAudioError("音频已生成，但浏览器阻止了自动播放，请点击播放。");
         }
       }, 300);
     } catch (error) {
@@ -795,13 +807,18 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      await audioRef.current.play();
-      setIsPlaying(true);
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch {
+        setAudioError("播放失败，请重新生成音频或检查浏览器权限。");
+      }
     }
   };
 
-  const handleStop = () => {
+  const handleResetAudio = () => {
     if (!audioRef.current) return;
+
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
     setIsPlaying(false);
@@ -813,77 +830,117 @@ function AudioPage({ voices, scriptText, selectedTopic }) {
       <Card>
         <h3 className="text-xl font-semibold">语音参数</h3>
         <p className="mt-1 text-sm text-slate-500">
-          使用火山引擎 TTS 生成中文播客音频
+          使用 ElevenLabs 生成播客音频，支持生成后自动播放。
         </p>
 
         <div className="mt-6 space-y-4">
-          {volcVoices.map((voice, index) => (
+          {elevenVoices.map((voice, index) => (
             <button
+              type="button"
               key={voice.name}
               onClick={() => setSelectedVoiceIndex(index)}
-              className={`w-full rounded-3xl border p-5 text-left ${
+              className={`w-full rounded-3xl border p-5 text-left transition ${
                 selectedVoiceIndex === index
                   ? "border-brand-500 bg-brand-50"
-                  : "border-slate-200 bg-white"
+                  : "border-slate-200 bg-white hover:border-slate-300"
               }`}
             >
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between">
                 <h4 className="font-semibold">{voice.name}</h4>
-                <span>{voice.speed}</span>
+                <span className="text-xs text-slate-500">{voice.speed}</span>
               </div>
-              <p className="text-sm text-slate-500">{voice.language}</p>
+              <p className="mt-2 text-sm text-slate-500">{voice.language}</p>
             </button>
           ))}
         </div>
 
         {audioError && (
-          <div className="mt-4 text-red-500 text-sm">{audioError}</div>
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {audioError}
+          </div>
         )}
 
         <button
+          type="button"
           onClick={handleGenerateAudio}
           disabled={isGeneratingAudio}
-          className="mt-6 w-full bg-brand-600 text-white py-3 rounded-2xl"
+          className="mt-6 w-full rounded-2xl bg-brand-600 px-4 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isGeneratingAudio ? "生成中..." : "生成音频"}
+          {isGeneratingAudio ? "正在生成音频..." : "生成音频"}
         </button>
       </Card>
 
       <Card>
-        <div className="p-6 bg-slate-900 text-white rounded-3xl">
-          <h3 className="text-xl font-semibold">
-            {selectedTopic?.title || "播客音频"}
+        <div className="rounded-[30px] bg-gradient-to-br from-ink via-slate-800 to-brand-700 p-6 text-white">
+          <p className="text-sm text-white/70">生成预览</p>
+          <h3 className="mt-2 text-2xl font-semibold">
+            {selectedTopic?.title || "AI Podcast Episode"}
           </h3>
 
           <audio
             ref={audioRef}
             src={audioUrl}
-            onTimeUpdate={(e) => {
-              const a = e.currentTarget;
-              if (a.duration) {
-                setProgress((a.currentTime / a.duration) * 100);
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onTimeUpdate={(event) => {
+              const audio = event.currentTarget;
+              if (audio.duration) {
+                setProgress(Math.min((audio.currentTime / audio.duration) * 100, 100));
               }
+            }}
+            onEnded={() => {
+              setIsPlaying(false);
+              setProgress(100);
             }}
           />
 
-          <div className="mt-6">
-            <div className="h-2 bg-white/20 rounded">
+          <div className="mt-8 rounded-3xl bg-white/10 p-5">
+            <div className="flex items-center justify-between text-sm text-white/80">
+              <span>
+                {isGeneratingAudio
+                  ? "Generating"
+                  : isPlaying
+                    ? "Playing"
+                    : audioUrl
+                      ? "Ready"
+                      : "Not generated"}
+              </span>
+              <span>{currentVoice?.name}</span>
+            </div>
+
+            <div className="mt-3 h-2 rounded-full bg-white/15">
               <div
-                className="h-2 bg-yellow-400"
+                className="h-2 rounded-full bg-gold transition-all duration-500"
                 style={{ width: `${progress}%` }}
               />
             </div>
 
-            <div className="mt-4 flex gap-4 justify-center">
-              <button onClick={handleTogglePlay} disabled={!audioUrl}>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={handleTogglePlay}
+                disabled={!audioUrl}
+                className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-ink shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 {isPlaying ? "暂停" : "播放"}
               </button>
 
-              <button onClick={handleStop} disabled={!audioUrl}>
+              <button
+                type="button"
+                onClick={handleResetAudio}
+                disabled={!audioUrl}
+                className="rounded-full bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
                 重置
               </button>
 
-              <a href={audioUrl} download="podcast.mp3">
+              <a
+                href={audioUrl || undefined}
+                download="podcast-audio.mp3"
+                className={`rounded-full bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20 ${
+                  !audioUrl ? "pointer-events-none opacity-40" : ""
+                }`}
+              >
                 下载
               </a>
             </div>
