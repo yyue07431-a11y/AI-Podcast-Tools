@@ -31,13 +31,16 @@ export default async function handler(req, res) {
       }
     );
 
-    if (!response.ok) {
+   if (!response.ok) {
   const err = await response.text();
 
-  return res.status(response.status).json({
+  console.error("Volc V3 status:", response.status);
+  console.error("Volc V3 error:", err);
+
+  return res.status(500).json({
     error: "V3 TTS failed",
     status: response.status,
-    detail: err.slice(0, 1000),
+    detail: err,
   });
 }
 
