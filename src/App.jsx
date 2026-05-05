@@ -221,7 +221,14 @@ ${customInstruction}
         }),
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+
+let data;
+try {
+  data = JSON.parse(rawText);
+} catch {
+  throw new Error(rawText || "后端返回的不是 JSON，请检查 generate-trends 接口");
+}
 
       if (!res.ok) throw new Error(data?.error || "脚本生成失败");
 
