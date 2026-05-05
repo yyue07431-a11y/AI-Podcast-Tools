@@ -6,18 +6,18 @@ export default async function handler(req, res) {
 
     const { text } = req.body || {};
 
-    if (!text || !text.trim()) {
+    if (!text || !String(text).trim()) {
       return res.status(400).json({ error: "Missing text" });
     }
 
     const appid = process.env.VOLC_APP_ID;
-    const token = process.env.VOLC_ACCESS_TOKEN;
+    const apiKey = process.env.VOLC_API_KEY;
     const resourceId = process.env.VOLC_RESOURCE_ID;
 
-    if (!appid || !token || !resourceId) {
+    if (!appid || !apiKey || !resourceId) {
       return res.status(500).json({
         error: "Missing Volcengine config",
-        detail: "请检查 VOLC_APP_ID / VOLC_ACCESS_TOKEN / VOLC_RESOURCE_ID",
+        detail: "请检查 VOLC_APP_ID / VOLC_API_KEY / VOLC_RESOURCE_ID",
       });
     }
 
@@ -25,12 +25,12 @@ export default async function handler(req, res) {
       "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
       {
         method: "POST",
-    headers: {
-  "Content-Type": "application/json",
-  "X-Api-App-Key": appid,
-  "X-Api-Access-Key": process.env.VOLC_API_KEY,
-  "X-Api-Resource-Id": resourceId,
-},
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-App-Key": appid,
+          "X-Api-Access-Key": apiKey,
+          "X-Api-Resource-Id": resourceId,
+        },
         body: JSON.stringify({
           app: {
             appid,
@@ -47,14 +47,13 @@ export default async function handler(req, res) {
           },
           request: {
             reqid: Date.now().toString(),
-            text: text.slice(0, 2000),
+            text: String(text).slice(0, 2000),
             text_type: "plain",
           },
         }),
-      }
+      },
     );
 
-    // ❗如果接口报错，直接返回真实错误
     if (!response.ok) {
       const err = await response.text();
 
@@ -68,7 +67,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔥 流式读取音频
     const reader = response.body.getReader();
     const chunks = [];
 
@@ -79,6 +77,12 @@ export default async function handler(req, res) {
     }
 
     const audioBuffer = Buffer.concat(chunks);
+
+    if (!audioBuffer.length) {
+      return res.status(500).json({
+        error: "Empty audio response",
+      });
+    }
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
