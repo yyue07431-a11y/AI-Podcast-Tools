@@ -1,94 +1,60 @@
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  if (req.method === "OPTIONS") return res.status(200).end();
-
-  if (req.method !== "POST" && req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed. Use POST or GET." });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
   try {
+    const {
+      niche = "AI, marketing, podcast, creator economy",
+      language = "中文",
+    } = req.body || {};
+
     const apiKey = process.env.KIMI_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({
-        error: "Missing KIMI_API_KEY",
-        detail: "请在 Vercel Project → Settings → Environment Variables 添加 KIMI_API_KEY，然后重新部署。",
-      });
+      return res.status(500).json({ error: "Missing KIMI_API_KEY" });
     }
-
-    const body = req.body || {};
-    const geo = body.geo || "US";
-    const language = body.language || "中文";
-
-    const rssUrl = `https://trends.google.com/trending/rss?geo=${geo}`;
-
-    const rssRes = await fetch(rssUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Accept: "application/rss+xml, application/xml, text/xml",
-      },
-    });
-
-    const xml = await rssRes.text();
-
-    if (!rssRes.ok) {
-      return res.status(500).json({
-        error: "Failed to fetch Google Trends RSS",
-        status: rssRes.status,
-        preview: xml.slice(0, 300),
-      });
-    }
-
-    const rawTrends = parseGoogleTrendsRss(xml).slice(0, 12);
-
-    if (!rawTrends.length) {
-      return res.status(500).json({
-        error: "No trends parsed from Google Trends RSS",
-        xmlPreview: xml.slice(0, 500),
-      });
-    }
-
-    const trendsText = rawTrends
-      .map((item, index) => {
-        return `${index + 1}. ${item.title}
-搜索热度：${item.traffic || "未知"}
-相关新闻：${item.news || "暂无"}`;
-      })
-      .join("\n\n");
 
     const prompt = `
 你是一个播客选题策划助手。
 
-下面是真实 Google Trends RSS 趋势数据：
-${trendsText}
+请模拟聚合以下平台的热点：
+X、Instagram、Google Trends RSS、微博、小红书、头条。
 
-请基于这些真实趋势，生成 8 个适合${language}播客的选题。
+方向：
+${niche}
 
-要求：
-1. 必须结合上面的真实趋势
-2. title 要像播客标题，不要只是关键词
-3. summary 说明为什么值得聊
-4. tag 用 2-4 个字
-5. momentum 保留搜索热度信息
-6. keywords 给 3 个关键词
-7. 只返回 JSON 数组，不要 Markdown，不要解释
+语言：
+${language}
 
-返回格式：
-[
-  {
-    "title": "播客选题标题",
-    "tag": "科技",
-    "momentum": "20K+ searches",
-    "summary": "这个选题为什么值得聊，以及可以从哪些角度展开。",
-    "keywords": ["关键词1", "关键词2", "关键词3"]
-  }
-]
+请生成 8 个适合播客创作的热点选题。
+
+每个热点必须包含：
+1. title：热点标题
+2. source：来源平台
+3. platform：来源平台
+4. category：只能从以下分类选择一个：政治、名人、娱乐、社会、科技、商业
+5. heat：热度分数，0-100
+6. summary：为什么适合做播客
+7. tags：3 个高度贴合主题的中文标签，不要泛泛写“AI”“热点”“播客”
+
+请严格返回 JSON，不要输出 markdown：
+{
+  "trends": [
+    {
+      "title": "",
+      "source": "",
+      "platform": "",
+      "category": "",
+      "heat": 88,
+      "summary": "",
+      "tags": ["", "", ""]
+    }
+  ]
+}
 `;
 
-    const kimiResponse = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+    const response = await fetch("https://api.moonshot.cn/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -99,98 +65,46 @@ ${trendsText}
         messages: [
           {
             role: "system",
-            content: "你是专业播客选题策划助手。你必须只返回严格 JSON 数组。",
+            content:
+              "你是一个热点选题策划助手，只返回合法 JSON，不要输出 markdown。",
           },
           {
             role: "user",
             content: prompt,
           },
         ],
-        temperature: 0.6,
+        temperature: 0.75,
       }),
     });
 
-    const kimiData = await kimiResponse.json();
+    const data = await response.json();
 
-    if (!kimiResponse.ok) {
-      return res.status(kimiResponse.status).json({
-        error: "Kimi API error",
-        detail: kimiData,
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: data?.error?.message || "Kimi API request failed",
+        detail: data,
       });
     }
 
-    const content = kimiData.choices?.[0]?.message?.content || "";
+    const content = data.choices?.[0]?.message?.content || "";
 
-    let trends;
+    let parsed;
     try {
-      trends = JSON.parse(content);
+      parsed = JSON.parse(content);
     } catch {
-      const match = content.match(/\[[\s\S]*\]/);
+      const match = content.match(/\{[\s\S]*\}/);
       if (!match) {
-        return res.status(500).json({
-          error: "Kimi response is not valid JSON",
-          raw: content,
-          sourceTrends: rawTrends,
-        });
+        throw new Error("AI 返回内容不是 JSON");
       }
-      trends = JSON.parse(match[0]);
+      parsed = JSON.parse(match[0]);
     }
 
     return res.status(200).json({
-      source: "Google Trends RSS",
-      geo,
-      rawTrends,
-      trends,
+      trends: Array.isArray(parsed.trends) ? parsed.trends : [],
     });
   } catch (error) {
     return res.status(500).json({
-      error: "Internal server error",
-      detail: error.message,
+      error: error.message || "趋势生成失败",
     });
   }
-}
-
-function parseGoogleTrendsRss(xml) {
-  const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-
-  return items.map((item) => {
-    const title = cleanXml(getTag(item, "title"));
-    const link = cleanXml(getTag(item, "link"));
-    const traffic = cleanXml(
-      getTag(item, "ht:approx_traffic") || getTag(item, "approx_traffic")
-    );
-
-    const newsTitles = [];
-    const newsRegex = /<ht:news_item_title>([\s\S]*?)<\/ht:news_item_title>/g;
-    let match;
-
-    while ((match = newsRegex.exec(item)) !== null) {
-      newsTitles.push(cleanXml(match[1]));
-    }
-
-    return {
-      title,
-      link,
-      traffic,
-      news: newsTitles.slice(0, 3).join("；"),
-    };
-  }).filter((item) => item.title);
-}
-
-function getTag(xml, tagName) {
-  const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`);
-  const match = xml.match(regex);
-  return match ? match[1] : "";
-}
-
-function cleanXml(value = "") {
-  return value
-    .replace(/<!\[CDATA\[/g, "")
-    .replace(/\]\]>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .trim();
 }
